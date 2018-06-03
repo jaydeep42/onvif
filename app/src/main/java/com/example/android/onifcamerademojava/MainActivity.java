@@ -1,163 +1,184 @@
 package com.example.android.onifcamerademojava;
 
 import android.Manifest;
-import android.content.Context;
+import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.text.TextUtils;
 import android.util.Log;
-import android.view.SurfaceView;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.android.gms.vision.MultiProcessor;
-import com.google.android.gms.vision.Tracker;
-import com.google.android.gms.vision.face.Face;
-import com.google.android.gms.vision.face.FaceDetector;
-import com.pedro.vlc.VlcListener;
-import com.pedro.vlc.VlcVideoLibrary;
-import com.rvirin.onvif.onvifcamera.MediaProfile;
 import com.rvirin.onvif.onvifcamera.OnvifDevice;
 import com.rvirin.onvif.onvifcamera.OnvifListener;
 import com.rvirin.onvif.onvifcamera.OnvifRequest;
 import com.rvirin.onvif.onvifcamera.OnvifResponse;
-import com.rvirin.onvif.onvifcamera.*;
 
-import java.util.List;
+import static com.rvirin.onvif.onvifcamera.OnvifDeviceKt.currentDevice;
 
 /**
- * Created by vardan on 5/17/18.
+ * Created by vardan on 5/31/18.
+ * Onvif camera login page.
  */
 
-public class MainActivity extends AppCompatActivity implements OnvifListener, VlcListener {
-    private GraphicOverlay mGraphicOverlay;
+public class MainActivity extends AppCompatActivity implements OnvifListener {
+    private static final String TAG = "MainActivity";
+    private Toast toast = null;
+    // permission request codes need to be < 256
+    private static final int RC_HANDLE_WRITE_PERM = 2;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        mGraphicOverlay = (GraphicOverlay) findViewById(R.id.faceOverlay);
-
-        int rc = ActivityCompat.checkSelfPermission(this, Manifest.permission.INTERNET);
-        if (rc != PackageManager.PERMISSION_GRANTED) {
-            Log.d("Error", "No internet access");
+        int rw = ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        if (rw != PackageManager.PERMISSION_GRANTED) {
+            requestExternalStoragePermission();
         }
-
-//        OnvifDeviceKt.currentDevice = new OnvifDevice("193.159.244.134", "service", "Xbks8tr8vT");
-        OnvifDeviceKt.currentDevice = new OnvifDevice("193.159.244.132", "service", "Xbks8tr8vT");
-        OnvifListener onvifListener = this;
-        OnvifDeviceKt.currentDevice.setListener(onvifListener);
-        OnvifDeviceKt.currentDevice.getServices();
-
-
-        Context context = getApplicationContext();
-        FaceDetector detector = new FaceDetector.Builder(context)
-                .setClassificationType(FaceDetector.ALL_CLASSIFICATIONS)
-                .build();
-
-        detector.setProcessor(
-                new MultiProcessor.Builder<>(new GraphicFaceTrackerFactory())
-                        .build());
-
     }
-
 
     @Override
     public void requestPerformed(OnvifResponse onvifResponse) {
         Log.d("INFO", onvifResponse.getParsingUIMessage());
 
-        if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetDeviceInformation){
-            OnvifDeviceKt.currentDevice.getProfiles();
-        } else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetProfiles){
-            List<MediaProfile> mediaProfile = OnvifDeviceKt.currentDevice.getMediaProfiles();
-            if (mediaProfile.size() != 0) {
-                OnvifDeviceKt.currentDevice.getStreamURI(mediaProfile.get(0));
+        cancelToast();
+
+        if (!onvifResponse.getSuccess()) {
+            Log.e("Error", "request failed: " + onvifResponse.getRequest().getType() +
+                    "\n Response: " + onvifResponse.getError());
+            toast = Toast.makeText(this, "⛔️ Request failed: ${response.request.type}", Toast.LENGTH_SHORT);
+            if (toast != null) {
+                toast.show();
             }
-        } else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetStreamURI) {
-            String uri = OnvifDeviceKt.currentDevice.getRtspURI();
-            SurfaceView surfaceView = findViewById(R.id.surfaceView);
-            VlcVideoLibrary vlcVideoLibrary = new VlcVideoLibrary(this, this, surfaceView);
-            vlcVideoLibrary.play(uri);
-        } else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetServices) {
-            OnvifDeviceKt.currentDevice.getDeviceInformation();
+        }
+        // if GetServices have been completed, we request the device information
+        else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetServices) {
+            currentDevice.getDeviceInformation();
+        }
+        // if GetDeviceInformation have been completed, we request the profiles
+        else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetDeviceInformation) {
+
+            TextView textView = findViewById(R.id.explanationTextView);
+            textView.setText(onvifResponse.getParsingUIMessage());
+            toast = Toast.makeText(this, "Device information retrieved 👍", Toast.LENGTH_SHORT);
+            showToast();
+
+            currentDevice.getProfiles();
+
+        }
+        // if GetProfiles have been completed, we request the Stream URI
+        else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetProfiles) {
+            int profilesCount = currentDevice.getMediaProfiles().size();
+            toast = Toast.makeText(this, profilesCount + " profiles retrieved 😎", Toast.LENGTH_SHORT);
+            showToast();
+
+            currentDevice.getStreamURI();
+
+        }
+        // if GetStreamURI have been completed, we're ready to play the video
+        else if (onvifResponse.getRequest().getType() == OnvifRequest.Type.GetStreamURI) {
+
+            Button button = findViewById(R.id.button);
+            button.setText(getString(R.string.Play));
+
+            toast = Toast.makeText(this, "Stream URI retrieved,\nready for the movie 🍿", Toast.LENGTH_SHORT);
+            showToast();
         }
 
     }
 
-    @Override
-    public void onComplete() {
-        Toast.makeText(this, "Video loading...", Toast.LENGTH_LONG).show();
+    public void buttonClicked(View view) {
 
+        // If we were able to retrieve information from the camera, and if we have a rtsp uri,
+        // We open StreamActivity and pass the rtsp URI
+        if (currentDevice.isConnected()) {
+            String uri = currentDevice.getRtspURI();
+            if (uri == null) {
+                Toast.makeText(this, "RTSP URI haven't been retrieved", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent intent = new Intent(view.getContext(), StreamActivity.class);
+            intent.putExtra("url", currentDevice.getRtspURI());
+            startActivityForResult(intent, 0);
+        } else {
+
+            // get the information type by the user to create the Onvif device
+            String ipAddress = getTextFromEditText(R.id.ipAddress);
+            String login = getTextFromEditText(R.id.login);
+            String password = getTextFromEditText(R.id.password);
+
+            if (!TextUtils.isEmpty(ipAddress) &&
+                    !TextUtils.isEmpty(login) &&
+                    !TextUtils.isEmpty(password)) {
+
+                // Create ONVIF device with user inputs and retrieve camera informations
+                currentDevice = new OnvifDevice(ipAddress, login, password);
+                OnvifListener onvifListener = this;
+                currentDevice.setListener(onvifListener);
+                currentDevice.getServices();
+
+            } else {
+                cancelToast();
+                toast = Toast.makeText(this,
+                        "Please enter an IP Address login and password",
+                        Toast.LENGTH_SHORT);
+                showToast();
+            }
+        }
     }
 
-    @Override
-    public void onError() {
-        Toast.makeText(this, "Error loading video...", Toast.LENGTH_LONG).show();
+    private String getTextFromEditText(int id) {
+        return ((EditText) findViewById(id)).getText().toString();
     }
 
+    private void showToast() {
+        if (toast != null) {
+            toast.show();
+        }
+    }
 
-    //==============================================================================================
-    // Graphic Face Tracker
-    //==============================================================================================
+    private void cancelToast() {
+        if (toast != null) {
+            toast.cancel();
+        }
+    }
 
     /**
-     * Factory for creating a face tracker to be associated with a new face.  The multiprocessor
-     * uses this factory to create face trackers as needed -- one for each individual.
+     * Handles the requesting of the external storage write permission.  This includes
+     * showing a "Snackbar" message of why the permission is needed then
+     * sending the request.
      */
-    private class GraphicFaceTrackerFactory implements MultiProcessor.Factory<Face> {
-        @Override
-        public Tracker<Face> create(Face face) {
-            return new GraphicFaceTracker(mGraphicOverlay);
-        }
-    }
+    private void requestExternalStoragePermission() {
+        Log.w(TAG, "External storage write permission is not granted. Requesting permission");
 
-    /**
-     * Face tracker for each detected individual. This maintains a face graphic within the app's
-     * associated face overlay.
-     */
-    private class GraphicFaceTracker extends Tracker<Face> {
-        private GraphicOverlay mOverlay;
-        private FaceGraphic mFaceGraphic;
+        final String[] permissions = new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE};
 
-        GraphicFaceTracker(GraphicOverlay overlay) {
-            mOverlay = overlay;
-            mFaceGraphic = new FaceGraphic(overlay);
+        if (!ActivityCompat.shouldShowRequestPermissionRationale(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            ActivityCompat.requestPermissions(this, permissions, RC_HANDLE_WRITE_PERM);
+            return;
         }
 
-        /**
-         * Start tracking the detected face instance within the face overlay.
-         */
-        @Override
-        public void onNewItem(int faceId, Face item) {
-            mFaceGraphic.setId(faceId);
-        }
+        final Activity thisActivity = this;
 
-        /**
-         * Update the position/characteristics of the face within the overlay.
-         */
-        @Override
-        public void onUpdate(FaceDetector.Detections<Face> detectionResults, Face face) {
-            mOverlay.add(mFaceGraphic);
-            mFaceGraphic.updateFace(face);
-        }
+        View.OnClickListener listener = new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                ActivityCompat.requestPermissions(thisActivity, permissions,
+                        RC_HANDLE_WRITE_PERM);
+            }
+        };
 
-        /**
-         * Hide the graphic when the corresponding face was not detected.  This can happen for
-         * intermediate frames temporarily (e.g., if the face was momentarily blocked from
-         * view).
-         */
-        @Override
-        public void onMissing(FaceDetector.Detections<Face> detectionResults) {
-            mOverlay.remove(mFaceGraphic);
-        }
-
-        /**
-         * Called when the face is assumed to be gone for good. Remove the graphic annotation from
-         * the overlay.
-         */
-        @Override
-        public void onDone() {
-            mOverlay.remove(mFaceGraphic);
-        }
+        Snackbar.make(findViewById(android.R.id.content), R.string.permission_extrenal,
+                Snackbar.LENGTH_INDEFINITE)
+                .setAction(R.string.ok, listener)
+                .show();
     }
 }
