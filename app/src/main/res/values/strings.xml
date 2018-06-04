@@ -14,4 +14,5 @@
     <string name="password">Password</string>
     <string name="login">Login</string>
     <string name="people_number">Detected people number: %1$d</string>
+    <string name="detected_texts">Detected texts: %1$s</string>
 </resources>

@@ -18,10 +18,12 @@ import android.widget.Toast;
 
 import com.example.android.onifcamerademojava.patch.SafeFaceDetector;
 import com.example.android.onifcamerademojava.util.FaceUtil;
-import com.example.android.onifcamerademojava.util.FileUtil;
+import com.example.android.onifcamerademojava.util.TextUtil;
 import com.google.android.gms.vision.Frame;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
+import com.google.android.gms.vision.text.TextBlock;
+import com.google.android.gms.vision.text.TextRecognizer;
 import com.pedro.vlc.VlcListener;
 import com.pedro.vlc.VlcVideoLibrary;
 
@@ -36,7 +38,8 @@ public class StreamActivity extends AppCompatActivity implements VlcListener, Vi
     private static String whereToSave;
     private VlcVideoLibrary vlcVideoLibrary = null;
     private TextureView textureView;
-    private TextView textView;
+    private TextView textViewDetectedFaces;
+    private TextView textViewDetectedTexts;
     private String url;
 
     @Override
@@ -51,7 +54,8 @@ public class StreamActivity extends AppCompatActivity implements VlcListener, Vi
         whereToSave = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES) + "/faces/";
 
         textureView = findViewById(R.id.textureView);
-        textView = findViewById(R.id.textView);
+        textViewDetectedFaces = findViewById(R.id.textViewDetectedFaces);
+        textViewDetectedTexts = findViewById(R.id.textViewDetectedTexts);
         textureView.setSurfaceTextureListener(this);
 
         url = getIntent().getStringExtra("url");
@@ -155,6 +159,9 @@ public class StreamActivity extends AppCompatActivity implements VlcListener, Vi
                 .setClassificationType(FaceDetector.NO_LANDMARKS)
                 .build();
 
+        // A text recognizer is created to find text
+        TextRecognizer textRecognizer = new TextRecognizer.Builder(getApplicationContext()).build();
+
         // Per google mobile vision api:
         // This is a temporary workaround for a bug in the face detector with respect to operating
         // on very small images.  This will be fixed in a future release.  But in the near term, use
@@ -162,27 +169,39 @@ public class StreamActivity extends AppCompatActivity implements VlcListener, Vi
         SafeFaceDetector safeDetector = new SafeFaceDetector(detector);
         checkIfReady(safeDetector);
 
-        // Create a frame from the bitmap and run face detection on the frame.
+        // Create a frame from the bitmap and run face and text detection on the frame.
         Frame frame = new Frame.Builder().setBitmap(bitmap).build();
         SparseArray<Face> faces = safeDetector.detect(frame);
+        SparseArray<TextBlock> texts = textRecognizer.detect(frame);
 
+        // Updating people number and detected texts
+        updateDetectedText(TextUtil.concatenate(texts));
         updatePeopleNumber(faces.size());
 
         if (save) {
             FaceUtil.save(faces, bitmap, whereToSave);
         }
 
-
         // Although detector may be used multiple times for different images, it should be released
         // when it is no longer needed in order to free native resources.
         safeDetector.release();
+        textRecognizer.release();
     }
 
     private void updatePeopleNumber(final int number) {
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                textView.setText(getString(R.string.people_number, number));
+                textViewDetectedFaces.setText(getString(R.string.people_number, number));
+            }
+        });
+    }
+
+    private void updateDetectedText(final String text) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                textViewDetectedTexts.setText(getString(R.string.detected_texts, text));
             }
         });
     }
